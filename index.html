@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>酥酥老師｜AI 解題小幫手</title>
+    
+    <meta name="description" content="酥酥老師的 AI 助教即時解惑。結合嚴謹的邏輯運算與清晰的步驟拆解，為學生提供 24 小時不間斷的個人化學習指導。">
+    <meta property="og:title" content="酥酥老師｜AI 解題小幫手">
+    <meta property="og:description" content="上傳題目，AI 立即為您進行破題分析與詳盡的步驟推導，突破學習盲點。">
+    <meta property="og:type" content="website">
+
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@400;700&display=swap" rel="stylesheet">
+    
+    <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-database-compat.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+    
+    <script>
+      MathJax = {
+        tex: { inlineMath: [['$', '$'], ['\\(', '\\)']], displayMath: [['$$', '$$'], ['\\[', '\\]']] },
+        svg: { fontCache: 'global' }
+      };
+    </script>
+    <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+    
+    <link rel="stylesheet" type="text/css" href="https://tikzjax.com/v1/fonts.css">
+    <script src="https://tikzjax.com/v1/tikzjax.js"></script>
+    
+    <style>
+        /* 日系可愛雜誌風色票 */
+        :root { 
+            --primary: #ffb6c1; /* 粉嫩主色 */
+            --dark: #d87093;    /* 深粉色，用於強調 */
+            --user-bg: #fff0f5; /* 學生對話框背景 */
+            --ai-bg: #ffffff;   /* AI對話框背景 */
+            --bg: #fff9e6;      /* 溫暖奶油黃背景 */
+            --border: #fce4ec; 
+        }
+
+        html, body {
+            margin: 0; padding: 0;
+            background-color: var(--bg);
+            /* 設定字體為宋體/標楷體優先 */
+            font-family: "Songti TC", "BiauKai", "DFKai-SB", "Noto Serif TC", serif;
+            color: #555;
+            -webkit-font-smoothing: antialiased;
+            -webkit-touch-callout: none;
+            -webkit-user-select: none;
+            user-select: none;
+        }
+
+        input[type="text"] { -webkit-user-select: auto; user-select: auto; font-family: inherit; }
+        .navbar {
+            background: rgba(255, 255, 255, 0.95); padding: 15px 20px; box-shadow: 0 2px 10px rgba(216, 112, 147, 0.1);
+            display: flex; justify-content: space-between; align-items: center;
+            position: fixed; top: 0; left: 0; width: 100%; box-sizing: border-box; z-index: 100;
+            height: 60px; border-bottom: 2px dashed var(--primary);
+        }
+        .brand-title { font-weight: 700; font-size: 18px; color: var(--dark); letter-spacing: 1px; }
+        .status-badge { color: #888; font-size: 12px; font-weight: bold; letter-spacing: 1px; display: flex; align-items: center; gap: 6px; }
+        .status-dot { width: 8px; height: 8px; background-color: #ccc; border-radius: 50%; }
+        
+        .chat-window {
+            padding: 80px 15px 100px 15px; 
+            display: flex; flex-direction: column; gap: 20px;
+            width: 100%; box-sizing: border-box; min-height: 100vh;
+        }
+
+        .bubble {
+            max-width: 92%; padding: 18px 22px; border-radius: 20px;
+            font-size: 15px; line-height: 1.8; position: relative;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.03);
+            word-wrap: break-word; overflow-wrap: break-word; word-break: break-word; 
+        }
+        .bubble.ai { align-self: flex-start; background: var(--ai-bg); border-bottom-left-radius: 4px; border: 1px solid var(--border); }
+        .bubble.user { align-self: flex-end; background: var(--user-bg); color: var(--dark); border-bottom-right-radius: 4px; }
+
+        .question-thumb {
+            max-width: 100%; max-height: 250px; border-radius: 12px;
+            margin-bottom: 5px; cursor: pointer; border: 3px solid white;
+            box-shadow: 0 4px 12px rgba(216, 112, 147, 0.15); display: block;
+        }
+
+        .input-bar {
+            background: white; padding: 15px 20px; border-top: 2px dashed var(--border);
+            display: flex; gap: 10px; position: fixed; bottom: 0; width: 100%;
+            box-sizing: border-box; z-index: 10; box-shadow: 0 -2px 10px rgba(0,0,0,0.02);
+        }
+
+        .input-bar input {
+            flex: 1; border: 2px solid var(--border); border-radius: 25px;
+            padding: 10px 20px; outline: none; font-size: 14px; background: #fffafb;
+            color: #555;
+        }
+        .input-bar input:focus { border-color: var(--primary); }
+
+        .input-bar button {
+            background: var(--primary); color: white; border: none;
+            width: 42px; height: 42px; border-radius: 50%; cursor: pointer;
+            display: flex; align-items: center; justify-content: center;
+            transition: 0.2s; padding: 0; box-shadow: 0 2px 6px rgba(255, 182, 193, 0.5);
+        }
+        .input-bar button:disabled { background: #eeeeee; color: #aaaaaa; box-shadow: none; cursor: not-allowed; }
+        .input-bar button:hover:not(:disabled) { transform: scale(1.05); background: var(--dark); }
+
+        .loading-container { align-self: flex-start; padding: 10px; }
+        .loading-dots { display: flex; gap: 6px; margin-bottom: 8px; }
+        .loading-dots div { width: 8px; height: 8px; background-color: var(--primary); border-radius: 50%; animation: bounce 0.6s infinite alternate; opacity: 0.8; }
+        .loading-dots div:nth-child(2) { animation-delay: 0.2s; background-color: #f8c291; }
+        .loading-dots div:nth-child(3) { animation-delay: 0.4s; background-color: var(--dark); }
+        @keyframes bounce { from { transform: translateY(0); opacity: 0.4; } to { transform: translateY(-8px); opacity: 1; } }
+        .loading-text { color: var(--dark); font-size: 12px; letter-spacing: 1px; animation: pulse-text 2s infinite ease-in-out; }
+        @keyframes pulse-text { 0% { opacity: 0.6; } 50% { opacity: 1; } 100% { opacity: 0.6; } }
+
+        .ai-content { color: #555; overflow-x: hidden; width: 100%; }
+        .ai-content p { margin-bottom: 15px; text-align: justify; }
+        .ai-content h3 { 
+            color: var(--dark); font-size: 17px; margin-top: 25px; margin-bottom: 10px;
+            padding-bottom: 6px; border-bottom: 2px dashed var(--primary); display: block;
+        }
+        .ai-content h3:first-child { margin-top: 5px; }
+        .ai-content ul, .ai-content ol { padding-left: 20px; margin-bottom: 15px; }
+        .ai-content li { margin-bottom: 6px; }
+        .ai-content mjx-container, .ai-content pre { max-width: 100%; overflow-x: auto; padding-bottom: 5px; }
+        .error-msg { text-align: center; color: #d87093; padding: 15px; font-size: 14px; background: #fff0f5; border-radius: 8px; border: 1px dashed #d87093; }
+    </style>
+</head>
+<body>
+
+    <nav class="navbar">
+        <div class="brand-title">酥酥老師解題小站 🐾</div>
+        <div class="status-badge" id="system-status-box">
+            <div class="status-dot" id="system-status-dot"></div>
+            <span id="system-status-text">連線中...</span>
+        </div>
+    </nav>
+
+    <div id="chat-window" class="chat-window">
+        <div id="loading-area" class="loading-container">
+            <div class="loading-dots"><div></div><div></div><div></div></div>
+            <div class="loading-text" id="loading-text">正在讀取題目影像...</div>
+        </div>
+    </div>
+
+    <div class="input-bar" id="input-bar" style="display: none;">
+        <input type="text" id="chat-input" placeholder="對解析有疑問嗎？隨時發問喔！" autocomplete="off">
+        <button id="chat-send-btn" onclick="sendFollowUp()">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+        </button>
+    </div>
+
+    <script>
+        function updateStatus(text, dotColor) {
+            const statusText = document.getElementById('system-status-text');
+            const statusDot = document.getElementById('system-status-dot');
+            if (statusText && statusDot) {
+                statusText.innerText = text;
+                statusDot.style.backgroundColor = dotColor;
+            }
+        }
+
+        const chatWindow = document.getElementById('chat-window');
+        const MY_LIFF_ID = "2010007538-HEESDWze"; 
+        const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwxFfufe0b7eJpDxSmLgnbVvlq1itLvoD6ZCpvDJKtJg7ChcWn7lpf9LgZqQ4ZsThJiXQ/exec";
+        
+        window.sessionImage = null;       
+        window.initialResponse = "";      
+        window.followUps = [];            
+        window.activeTaskId = null; 
+
+        // 提醒：此處保留了原有的 Firebase 設定
+        const firebaseConfig = {
+            apiKey: "AIzaSyALkTnkYY3JZLCTyajahpi4IZKmFX9USdw",
+            authDomain: "su-hao-classroom.firebaseapp.com",
+            projectId: "su-hao-classroom",
+            storageBucket: "su-hao-classroom.firebasestorage.app",
+            messagingSenderId: "764168135846",
+            appId: "1:764168135846:web:f2923a5f4952fa1ca64067",
+            databaseURL: "https://su-hao-classroom-default-rtdb.firebaseio.com/"
+        };
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.database();
+
+        // 調整為專屬酥酥老師的全科家教 Prompt
+        const SYSTEM_PROMPT = `
+        你是一位台灣具備豐富教學經驗、溫柔耐心且邏輯嚴謹的國中小全科家教「酥酥老師」的 AI 小幫手。
+        你的目標是引導學生深刻理解觀念，而非僅僅給出答案。
+
+        【限制】：
+        1. 領域限制：請解答國中小範圍的「國語、數學、自然、社會、英語」等題目。若圖片內容完全模糊不清或無關學習，請溫柔地回覆：「不好意思，這張圖片看不太清楚，或者是無關學習的內容唷！請重新上傳一次清晰的題目～」
+        2. 嚴禁任何開場白、廢話或結語（例如：根據圖片、以下是解析...等）。
+        3. 必須直接從「### 破題分析」開始輸出，直到解答結束。
+        4. 全程禁用emoji。
+
+        【排版與語法規範】：
+        1. 語言：請一律使用繁體中文，語氣溫和、有耐心且具備專業度。
+        2. 數學算式：嚴格使用 LaTeX 語法。行內公式必須使用 $ 包覆（例如：$x=2$），獨立成行的置中公式必須使用 $$ 包覆（例如：$$y = ax^2 + bx + c$$）。
+        3. 圖解輔助：若題目需要幾何、力學受力圖等輔助說明，請使用 TikZ 語法繪製簡圖。
+           - 請直接輸出 \\begin{tikzpicture} ... \\end{tikzpicture}。
+        4. 若無法確定題目資訊，必須明確指出哪部分無法辨識。
+        5. 每一步皆需重新檢查前一步的運算結果，避免錯誤。
+
+        【初次解析回覆格式】：
+        請嚴格按照以下四個區塊來建構你的回覆，並使用 Markdown 的 ### 標題格式：
+        ### 破題分析
+        （請簡潔列出題目的「已知條件」、「求解目標」，以及本題測驗的「核心觀念」。）
+        ### 解題思路
+        （在進行步驟前，先用溫柔的語氣告訴學生「我們為什麼要這樣思考」、「切入點在哪裡」。）
+        ### 解題步驟
+        （以列表方式 Step 1, Step 2... 詳細寫下過程。每一個轉換都必須交代理由。）
+        ### 解答
+        （請明確給出最終答案，數學/自然答案請用 latex 用外框包住，例如：$$ \\boxed{ \\text{在此處填入最終答案內容} } $$。若有單位請標示清楚。）
+        ### ☆ 酥酥老師的小叮嚀
+        （若此題有容易犯錯的陷阱、速解法或是背誦口訣，請在此區塊用酥酥老師親切的口吻簡短分享。若為一般常規題，請直接省略此區塊。）
+        ### 題目價值評鑑
+           - **難易度：** （評估為簡單、中等或困難，並說明原因）
+           - **認知向度：** （挑選最符合的向度並說明原因）
+
+        【後續追問回覆格式】：
+        若學生對先前的解析提出疑問，請直接針對他的問題進行親切、耐心的引導與講解，不需再套用上述四大區塊。
+        `;
+
+        initializeLiff();
+
+        async function initializeLiff() {
+            try {
+                await liff.init({ liffId: MY_LIFF_ID });
+                
+                if (!liff.isInClient()) {
+                    showError("【系統通知】\n為確保學習品質，小站僅限在 LINE 聊天室內部開啟唷！");
+                    document.getElementById('input-bar').style.display = "none";
+                    return; 
+                }
+
+                if (!liff.isLoggedIn()) {
+                    liff.login();
+                    return;
+                }
+
+                let tid = new URLSearchParams(window.location.search).get('taskId'); 
+                if (!tid) {
+                    const searchData = liff.getSearchData();
+                    if (searchData) tid = new URLSearchParams(searchData).get('taskId');
+                }
+                if (!tid) {
+                    const hashData = window.location.hash.split('?')[1];
+                    if (hashData) tid = new URLSearchParams(hashData).get('taskId');
+                }
+
+                if (!tid) {
+                    showError("哎呀，找不到題目連結耶！請由 LINE 官方帳號重新發起請求喔。");
+                    return;
+                }
+
+                window.activeTaskId = tid; 
+                const profile = await liff.getProfile();
+                fetchTaskDataSecurely(tid, profile.userId);
+
+            } catch (err) {
+                showError("LINE 驗證初始化失敗：" + err.message);
+            }
+        }
+
+        function fetchTaskDataSecurely(tid, visitorUid) {
+            db.ref("ai_tasks/" + tid).once("value").then((snap) => {
+                const data = snap.val();
+                if (!data) {
+                    showError("找不到這題的資料，提問可能已經過期囉。");
+                    return;
+                }
+
+                if (data.uid !== visitorUid) {
+                    showError("【系統通知】\n這份解析只有發問的同學可以看唷！如果是你的問題，請親自上傳題目～");
+                    document.getElementById('input-bar').style.display = "none";
+                    return;
+                }
+
+                if (data.image) window.sessionImage = data.image;
+
+                if (data.status === "completed" && data.ai_response) {
+                    window.initialResponse = data.ai_response;
+                    window.followUps = data.follow_ups || [];
+                    renderInitialResult(data.ai_response);
+                    renderChatHistory(); 
+                } else {
+                    updateStatus("解題中", "#ffb6c1");
+                    document.getElementById('loading-text').innerText = "酥酥老師的助教正在幫你分析題目唷...";
+                    callGeminiFirstTurn(data.image, tid, data.uid);
+                }
+            }).catch(err => showError("資料庫連線失敗：" + err.message));
+        }
+
+        async function callGeminiFirstTurn(base64Img, tid, uid) {
+            const payload = {
+                system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
+                contents: [{ parts: [{ text: "請辨識題目並開始解題。" }, { inline_data: { mime_type: "image/jpeg", data: base64ImageClean(base64Img) } }] }],
+                generationConfig: { temperature: 0.05, maxOutputTokens: 8192 }
+            };
+            try {
+                const response = await fetch(SCRIPT_URL, {
+                    method: 'POST', headers: { "Content-Type": "text/plain;charset=utf-8" },
+                    body: JSON.stringify({ action: "askGemini", geminiPayload: payload })
+                });
+                const resultText = await response.text();
+                let result = JSON.parse(resultText);
+                const aiText = result?.candidates?.[0]?.content?.parts?.[0]?.text;
+                if (aiText) {
+                    window.initialResponse = aiText;
+                    renderInitialResult(aiText);
+                    db.ref("ai_tasks/" + tid).update({ status: "completed", ai_response: aiText, image: null });
+                } else { throw new Error("小幫手目前有點迷路，請關閉視窗重新試試看。"); }
+            } catch (error) { showError("【錯誤】" + error.message); }
+        }
+
+        async function sendFollowUp() {
+            const inputEl = document.getElementById('chat-input');
+            const userText = inputEl.value.trim();
+            if (!userText || !window.activeTaskId) return;
+            
+            inputEl.value = ""; inputEl.disabled = true;
+            appendChatBubble('user', userText);
+            const loadingId = appendChatBubble('ai', "<div class='loading-dots' style='margin:0;'><div></div><div></div><div></div></div>");
+            scrollToBottom();
+
+            let apiContents = [];
+            if (window.sessionImage) apiContents.push({ role: "user", parts: [{ text: "題目圖" }, { inline_data: { mime_type: "image/jpeg", data: base64ImageClean(window.sessionImage) } }] });
+            apiContents.push({ role: "model", parts: [{ text: window.initialResponse }] });
+            window.followUps.forEach(msg => apiContents.push({ role: msg.role === 'user' ? "user" : "model", parts: [{ text: msg.text }] }));
+            apiContents.push({ role: "user", parts: [{ text: userText }] });
+
+            try {
+                const response = await fetch(SCRIPT_URL, { 
+                    method: 'POST', headers: { "Content-Type": "text/plain;charset=utf-8" },
+                    body: JSON.stringify({ action: "askGemini", geminiPayload: { system_instruction: { parts: [{ text: SYSTEM_PROMPT }] }, contents: apiContents } }) 
+                });
+                const result = await response.json();
+                const aiReply = result?.candidates?.[0]?.content?.parts?.[0]?.text;
+                document.getElementById(loadingId).remove();
+                if (aiReply) {
+                    appendChatBubble('ai', formatAIResponse(aiReply));
+                    window.followUps.push({ role: "user", text: userText }, { role: "model", text: aiReply });
+                    db.ref("ai_tasks/" + window.activeTaskId).update({ follow_ups: window.followUps });
+                    triggerMathJax();
+                }
+            } catch (e) { document.getElementById(loadingId).innerText = "錯誤: " + e.message; }
+            inputEl.disabled = false; inputEl.focus(); scrollToBottom();
+        }
+
+        function appendChatBubble(role, html, id = null) {
+            const b = document.createElement('div');
+            b.className = `bubble ${role} ${role === 'ai' ? 'ai-content' : ''}`;
+            b.innerHTML = html;
+            const cid = id || "id_" + Date.now();
+            b.id = cid; chatWindow.appendChild(b); return cid;
+        }
+
+        function renderInitialResult(text) {
+            document.getElementById('loading-area').style.display = "none";
+            if (window.sessionImage) appendChatBubble('user', `<img src="data:image/jpeg;base64,${window.sessionImage}" class="question-thumb" onclick="window.open(this.src)"><div style="font-size:13px; opacity:0.8;">這是我有疑問的題目！</div>`);
+            appendChatBubble('ai', formatAIResponse(text));
+            document.getElementById('input-bar').style.display = "flex";
+            updateStatus("解析完成", "#ffb6c1");
+            triggerMathJax();
+            setTimeout(scrollToBottom, 300);
+        }
+
+        function renderChatHistory() {
+            window.followUps.forEach(m => appendChatBubble(m.role==='user'?'user':'ai', m.role==='user'?m.text:formatAIResponse(m.text)));
+            triggerMathJax(); setTimeout(scrollToBottom, 300);
+        }
+
+        function showError(m) {
+            document.getElementById('loading-area').style.display = "none";
+            appendChatBubble('ai', `<div class="error-msg">${m}</div>`);
+            updateStatus("發生異常", "#d87093");
+        }
+
+        function formatAIResponse(text) {
+            let processed = text.replace(/\\begin\{tikzpicture\}([\s\S]*?)\\end\{tikzpicture\}/g, m => `<script type="text/tikz">\n${m}\n<\/script>`);
+            marked.setOptions({ breaks: true, gfm: true });
+            return marked.parse(processed);
+        }
+
+        function triggerMathJax() { if (window.MathJax) MathJax.typesetPromise().catch(e => console.log(e.message)); }
+        function base64ImageClean(s) { return s.includes(",") ? s.split(",")[1] : s; }
+        function scrollToBottom() { window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' }); }
+        
+        document.getElementById('chat-input').addEventListener('keypress', e => { if (e.key === 'Enter') sendFollowUp(); });
+        document.addEventListener('contextmenu', e => { e.preventDefault(); alert("酥酥老師的心血結晶，請勿任意翻印唷！"); });
+    </script>
+</body>
+</html>
